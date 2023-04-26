@@ -1,14 +1,11 @@
 import torch
-from pytorch_lightning.callbacks.base import Callback
+from pytorch_lightning.callbacks import Callback
 from torchvision import transforms as T
 from time import perf_counter
-from absl import flags
-
-FLAGS = flags.FLAGS
 
 
 class WeightNorm(Callback):
-    def on_train_epoch_end(self, trainer, pl_module, outputs):
+    def on_train_epoch_end(self, trainer, pl_module):
         weightnorm = sum(
             param.square().sum() for param in pl_module.parameters()
         ).sqrt()
@@ -16,18 +13,27 @@ class WeightNorm(Callback):
 
 
 class TotalGradient(Callback):
+    def __init__(self, args) -> None:
+        super().__init__()
+        self.args = args
+
     def on_train_epoch_start(self, trainer, pl_module):
         self.mean_grad = [torch.zeros_like(param) for param in pl_module.parameters()]
         self.grad_sq_sum = 0
-        if FLAGS.label_noise:
+        if self.args.label_noise:
             self.noisy_sq_sum = 0
         self.num_steps = 0
 
     def on_train_batch_end(
-        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+        self,
+        trainer,
+        pl_module,
+        outputs,
+        batch,
+        batch_idx,
     ):
-        if not FLAGS.fullbatch:
-            if FLAGS.label_noise:
+        if not self.args.fullbatch:
+            if self.args.label_noise:
                 noisy_grads = [param.grad for param in pl_module.parameters()]
                 noisy_sq = sum(grad.square().sum() for grad in noisy_grads)
                 self.noisy_sq_sum += noisy_sq
@@ -51,8 +57,8 @@ class TotalGradient(Callback):
             ]
             self.num_steps += 1
 
-    def on_train_epoch_end(self, trainer, pl_module, outputs):
-        if FLAGS.fullbatch:
+    def on_train_epoch_end(self, trainer, pl_module):
+        if self.args.fullbatch:
             grad_sq = sum(param.grad.square().sum() for param in pl_module.parameters())
             pl_module.log("grad/norm", grad_sq.sqrt())
         else:
@@ -61,11 +67,11 @@ class TotalGradient(Callback):
             self.grad_sq_sum /= self.num_steps
             pl_module.log("grad/norm", mean_grad_sq.sqrt())
             pl_module.log("grad/reg", self.grad_sq_sum - mean_grad_sq)
-            if FLAGS.label_noise:
+            if self.args.label_noise:
                 self.noisy_sq_sum /= self.num_steps
                 pl_module.log(
                     "grad/tr_G",
-                    FLAGS.batch_size * (self.noisy_sq_sum - self.grad_sq_sum),
+                    self.args.batch_size * (self.noisy_sq_sum - self.grad_sq_sum),
                 )
 
 
@@ -73,7 +79,7 @@ class TimeEpoch(Callback):
     def on_train_epoch_start(self, trainer, pl_module):
         self.t = perf_counter()
 
-    def on_train_epoch_end(self, trainer, pl_module, outputs):
+    def on_train_epoch_end(self, trainer, pl_module):
         elapsed_t = perf_counter() - self.t
         pl_module.log("time/sec_per_epoch", elapsed_t)
         self.t = 0

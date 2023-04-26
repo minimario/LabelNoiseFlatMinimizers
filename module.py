@@ -1,9 +1,9 @@
 import torch
 from torch.optim.lr_scheduler import LambdaLR
 import pytorch_lightning as pl
-from pytorch_lightning.metrics import Accuracy
+# from pytorch_lightning.metrics import Accuracy
 from loss import LabelSmoothingLoss
-from models import resnet18, vgg16
+from models import resnet18 #, vgg16
 from bisect import bisect
 from torch import nn
 from absl import flags
@@ -46,7 +46,8 @@ class CIFAR10Module(pl.LightningModule):
         super().__init__()
         model_dict = {
             "resnet18": resnet18,
-            "vgg16": vgg16,
+            # "vgg16": vgg16,
+            "vgg16": None
         }
         norm_dict = {
             "groupnorm": lambda x: nn.GroupNorm(x // FLAGS.group_size, x),
@@ -56,7 +57,6 @@ class CIFAR10Module(pl.LightningModule):
         self.criterion = LabelSmoothingLoss(
             10, FLAGS.smoothing, label_noise=FLAGS.label_noise
         )
-        self.accuracy = Accuracy()
         self.model = model_dict[FLAGS.model](
             num_classes=10, norm_layer=norm_dict[FLAGS.norm_layer]
         )
@@ -92,7 +92,8 @@ class CIFAR10Module(pl.LightningModule):
         if FLAGS.fullbatch:
             total_steps = FLAGS.max_epochs
         else:
-            total_steps = FLAGS.max_epochs * len(self.train_dataloader())
+            # total_steps = FLAGS.max_epochs * len(self.train_dataloader())
+            total_steps = FLAGS.max_epochs * len(self.trainer._data_connector._train_dataloader_source.dataloader())
 
         scheduler = {
             "scheduler": LinearWarmupCosineAnnealingLR(
